@@ -1,3 +1,6 @@
 /arj
 .env
 config.py
+.idea
+arj/Bot3.iml
+arj/__init__.py

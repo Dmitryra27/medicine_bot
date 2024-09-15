@@ -3,7 +3,6 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from transformers import GPTNeoForCausalLM, GPT2Tokenizer
 from dotenv import load_dotenv
 import os
 # Загрузка переменных окружения из .env файла
@@ -16,15 +15,6 @@ if not API_TOKEN:
 bot = Bot(token=API_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
-# Загрузка модели и токенизатора
-model_name = "EleutherAI/gpt-neo-125M"
-tokenizer = GPT2Tokenizer.from_pretrained(model_name)
-model = GPTNeoForCausalLM.from_pretrained(model_name)
-async def generate_response(prompt):
-    inputs = tokenizer(prompt, return_tensors="pt")
-    outputs = model.generate(inputs['input_ids'], max_length=150, num_return_sequences=1)
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return response
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     # Создание клавиатуры с кнопками
@@ -68,9 +58,7 @@ async def handle_callback_query(callback_query: types.CallbackQuery):
         await bot.send_message(callback_query.from_user.id, tips)
 @dp.message()
 async def handle_question(message: types.Message):
-    user_question = message.text
-    response = await generate_response(user_question)
-    await message.answer(response)
+    await message.answer("Извините, я не могу сгенерировать ответ на ваш вопрос. Пожалуйста, воспользуйтесь кнопками меню.")
 if __name__ == '__main__':
     # Запуск бота
     try:

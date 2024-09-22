@@ -1,27 +1,35 @@
 import asyncio
+import logging
 from aiogram import Bot, Dispatcher, types
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.filters import Command
-from aiogram.fsm.state import StatesGroup, State
+from aiogram.filters import Command, StateFilter
 from aiogram import F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 import os
+
 # Загрузка переменных окружения из .env файла
 load_dotenv()
 API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-# Проверка, что токен был загружен
 if not API_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN не установлен в .env файле.")
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
 # Инициализация бота и диспетчера
-bot = Bot(token=API_TOKEN)
 storage = MemoryStorage()
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=storage)
-# Определяем состояния
+
+
+# Определение состояний
 class Form(StatesGroup):
     waiting_for_doctor = State()
+    waiting_for_date = State()
     waiting_for_time = State()
+
+
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     # Создание клавиатуры с кнопками
@@ -40,15 +48,18 @@ async def start_command(message: types.Message):
         ]
     ])
     await message.answer("Добрый день! Пожалуйста, выберите один из вариантов:", reply_markup=keyboard)
+
+
 @dp.callback_query()
-async def handle_callback_query(callback_query: types.CallbackQuery):
+async def handle_callback_query(callback_query: types.CallbackQuery, state: FSMContext):
     if callback_query.data == "book_appointment":
         await callback_query.answer("Вы выбрали запись к врачу.")
         await bot.send_message(callback_query.from_user.id, "К какому врачу хотите записаться?")
-        await Form.waiting_for_doctor.set()  # Устанавливаем состояние ожидания врача
+        await state.set_state(Form.waiting_for_doctor)  # Устанавливаем состояние ожидания врача
     elif callback_query.data == "online_consultation":
         await callback_query.answer("Вы выбрали консультацию онлайн.")
-        await bot.send_message(callback_query.from_user.id, "Вы можете получить консультацию, заполнив форму на нашем сайте.")
+        await bot.send_message(callback_query.from_user.id,
+                               "Вы можете получить консультацию, заполнив форму на нашем сайте.")
     elif callback_query.data == "beauty_health_tips":
         await callback_query.answer("Вы выбрали советы по красоте и здоровью.")
         tips = "Каждый день новые упражнения на нашем канале - https://t.me/+BokVVpRyGsFhNmIy."
@@ -64,33 +75,36 @@ async def handle_callback_query(callback_query: types.CallbackQuery):
         await callback_query.answer("О наших докторах:")
         tips = "Вся информация о наших докторах на сайте: prodoctorov.ru"
         await bot.send_message(callback_query.from_user.id, tips)
-@dp.message(Form.waiting_for_doctor)
+
+
+# Получение врача
+@dp.message(StateFilter(Form.waiting_for_doctor))
 async def process_doctor(message: types.Message, state: FSMContext):
-    # Сохраняем ответ пользователя
     await state.update_data(doctor=message.text)
-    # Переходим к следующему вопросу
-    await message.answer("На сколько хотите записаться?")
-    await state.set_state(Form.waiting_for_time)  # Устанавливаем состояние ожидания времени
-@dp.message(Form.waiting_for_time)
+    await state.set_state(Form.waiting_for_date)
+    await message.answer("Какого числа хотите записаться? (например, 25)")
+
+
+# Получение даты
+@dp.message(StateFilter(Form.waiting_for_date))
+async def process_date(message: types.Message, state: FSMContext):
+    await state.update_data(date=message.text)
+    await state.set_state(Form.waiting_for_time)
+    await message.answer("Во сколько хотите записаться? (например, 12)")
+
+
+# Получение времени
+@dp.message(StateFilter(Form.waiting_for_time))
 async def process_time(message: types.Message, state: FSMContext):
-    if message.text.isdigit():  # Проверяем, что введено число
-        user_data = await state.get_data()  # Получаем сохраненные данные
-        doctor = user_data.get("doctor")
-        await message.answer(f"Вы записаны к врачу {doctor} на {message.text} часов.")
-        await state.clear()  # Очищаем состояние
-    else:
-        await message.answer("Пожалуйста, введите корректное время в часах.")
-@dp.message(F.text)
-async def handle_question(message: types.Message):
-    text = message.text.lower()
-    if "запись" in text:
-        await message.answer("Нажмите кнопку меню - Запись к врачу.")
-    elif "врач" in text:
-        await message.answer("К какому врачу хотите записаться? Используйте меню для записи.")
-    elif "расписание" in text:
-        await message.answer("Доктор работает в рабочие дни с 10 до 19 часов.")
-    else:
-        await message.answer("Соединяю со специалистом")
+    await state.update_data(time=message.text)
+    data = await state.get_data()
+    doctor = data.get('doctor')
+    date = data.get('date')
+    time = data.get('time')
+    await message.answer(f"Вы записаны к {doctor}y {date} числа в {time} часов.")
+    await state.clear()  # Завершение состояния
+
+
 if __name__ == '__main__':
     # Запуск бота
     try:
